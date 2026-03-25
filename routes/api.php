@@ -2,6 +2,8 @@
 
 use App\Http\Controllers\Companies\CompanyController;
 use App\Http\Controllers\Documents\DocumentController;
+use App\Http\Controllers\projects\MessageController;
+use App\Http\Controllers\projects\ProjectController;
 use App\Models\User;
 use Illuminate\Foundation\Auth\EmailVerificationRequest;
 use Illuminate\Http\Request;
@@ -82,5 +84,17 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/logout', [AuthController::class, 'logout']);
     Route::get('/me', [AuthController::class, 'me']);
     Route::apiResource('documents', DocumentController::class);
+    Route::middleware('auth:sanctum')->group(function () {
+
+        // Projets
+        Route::get('/projects', [ProjectController::class, 'index']);
+        Route::post('/projects', [ProjectController::class, 'store']);
+        Route::get('/projects/{project}', [ProjectController::class, 'show']);
+        Route::delete('/projects/{project}', [ProjectController::class, 'destroy']);
+
+        // Messages
+        Route::get('/projects/{project}/messages', [MessageController::class, 'index']);
+        Route::post('/projects/{project}/messages', [MessageController::class, 'store']);
+    });
 });
 

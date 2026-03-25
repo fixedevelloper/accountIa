@@ -31,4 +31,15 @@ class User extends Authenticatable implements MustVerifyEmail
     public function auditLogs() {
         return $this->hasMany(AuditLog::class);
     }
+    // Relation : un utilisateur a plusieurs projets
+    public function projects()
+    {
+        return $this->hasMany(Project::class);
+    }
+
+    // Relation : messages de l'utilisateur
+    public function messages()
+    {
+        return $this->hasMany(Message::class);
+    }
 }

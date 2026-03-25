@@ -72,7 +72,7 @@ class AnalyzeDocumentJob implements ShouldQueue
 
             // 🔥 Comptabilité
             app(AccountingService::class)->createEntryFromDocument($document);
-
+            $document->update(['status' => 'success']);
             logger("✅ DONE document: " . $document->id);
 
         } catch (\Exception $e) {

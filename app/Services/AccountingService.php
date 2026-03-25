@@ -99,6 +99,7 @@ class AccountingService
             }
         }
 
+
         logger("✅ Écriture comptable générée: " . $entry->id);
     }
 
