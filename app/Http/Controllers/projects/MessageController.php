@@ -4,10 +4,12 @@
 namespace App\Http\Controllers\projects;
 
 use App\Http\Controllers\Controller;
+use App\Models\Document;
 use App\Models\Message;
 use App\Models\Project;
 use App\Services\GeminiService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
@@ -115,6 +117,24 @@ class MessageController extends Controller
 
         return response()->json($messages);
     }
+    public function messageDocuments(Document $document)
+    {
+        $user = Auth::user();
+        $name = 'document-' . $document->id;
+        $project = Project::query()->where(['user_id' => $user->id, 'name' => $name])->first();
+
+        $firstMessages = $project->messages()
+            ->orderBy('created_at', 'asc')
+            ->limit(2)
+            ->pluck('id');
+
+        $messages = $project->messages()
+            ->with('user:id,name')
+            ->whereNotIn('id', $firstMessages)
+            ->orderBy('created_at', 'asc')
+            ->paginate(50);
+        return response()->json($messages);
+    }
     // Dans un helper, un service ou un contrôleur
     public function buildPrompt(string $msgText, string $projectType): string
     {
@@ -164,5 +184,120 @@ CONTEXTE :
 REQUÊTE DE L'UTILISATEUR :
 {$msgText}
 ";
+    }
+    public function sendMessageDocument(Request $request, $id)
+    {
+        $request->validate([
+            'text' => 'required|string|max:5000',
+        ]);
+
+
+        DB::beginTransaction();
+
+        try {
+            // 🔥 1. Charger extraction UNE SEULE FOIS
+            $document=Document::find($id);
+            $extraction = $document->latestExtraction;
+
+            if (!$extraction) {
+                return response()->json([
+                    'success' => false,
+                    'error' => 'Aucune extraction disponible pour ce document'
+                ], 422);
+            }
+
+            // 🔥 2. Créer projet (SAFE)
+            $project = Project::firstOrCreate(
+                [
+                    'user_id' => $request->user()->id,
+                    'name' => $extraction->type_document . ' - ' . $extraction->invoice_number,
+                ],
+                [
+                    'type' => $extraction->type_document,
+                    'status' => 'active',
+                ]
+            );
+
+            // 🔥 3. Message user
+            $userMessage = Message::create([
+                'user_id' => $request->user()->id,
+                'project_id' => $project->id,
+                'type' => 'user',
+                'text' => $request->text,
+            ]);
+
+            // 🔥 4. Historique (les PLUS récents)
+            $history = $project->messages()
+                ->latest() // DESC
+                ->limit(15)
+                ->get()
+                ->reverse() // remettre dans l'ordre chronologique
+                ->map(fn($m) => [
+                    'text' => $m->text,
+                    'type' => $m->type
+                ])
+                ->values()
+                ->toArray();
+
+            // 🔥 5. Injecter données document (ULTRA IMPORTANT)
+            $documentData = json_encode($extraction->toArray(), JSON_UNESCAPED_UNICODE);
+
+            $prompt = $this->buildPromptSingle(
+                $request->text,
+                $extraction->type_document,
+                $documentData
+            );
+
+            // 🔥 6. IA
+            $aiResponse = $this->gemini->generateResponse($prompt, $history);
+
+            if (!$aiResponse['success']) {
+                DB::rollBack();
+
+                Log::warning("IA failed", [
+                    'project_id' => $project->id,
+                    'error' => $aiResponse['error']
+                ]);
+
+                return response()->json([
+                    'success' => false,
+                    'user_message' => $userMessage->load('user:id,name'),
+                    'ai_error' => config('app.env') === 'production'
+                        ? 'IA temporairement indisponible'
+                        : $aiResponse['error'],
+                ], 207);
+            }
+
+            // 🔥 7. Message IA
+            $aiMessage = Message::create([
+                'user_id' => $request->user()->id,
+                'project_id' => $project->id,
+                'type' => 'ai',
+                'text' => $aiResponse['text'],
+            ]);
+
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'user_message' => $userMessage->load('user:id,name'),
+                'ai_message' => $aiMessage->load('user:id,name'),
+                'usage' => $aiResponse['usage'] ?? null,
+            ], 201);
+
+        } catch (\Throwable $e) {
+            DB::rollBack();
+
+            Log::error("sendMessageDocument ERROR", [
+                'document_id' => $document->id,
+                'user_id' => $request->user()->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'error' => 'Erreur serveur',
+            ], 500);
+        }
     }
 }

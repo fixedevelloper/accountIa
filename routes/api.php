@@ -94,7 +94,9 @@ Route::middleware('auth:sanctum')->group(function () {
 
         // Messages
         Route::get('/projects/{project}/messages', [MessageController::class, 'index']);
+        Route::get('/documents/{document}/messages', [MessageController::class, 'messageDocuments']);
         Route::post('/projects/{project}/messages', [MessageController::class, 'store']);
+        Route::post('/documents/{project}/messages', [DocumentController::class, 'sendMessageDocument']);
     });
 });
 

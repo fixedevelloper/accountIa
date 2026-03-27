@@ -94,11 +94,14 @@ class DocumentExtraction extends Model
 
     public function getVatRateAttribute(): ?float
     {
-        if ($this->amount_ht && $this->vat_amount) {
-            return ($this->vat_amount / $this->amount_ht) * 100;
+        $amountHt = (float) $this->amount_ht;
+        $vatAmount = (float) $this->vat_amount;
+
+        if ($amountHt <= 0) {
+            return null;
         }
 
-        return null;
+        return round(($vatAmount / $amountHt) * 100, 2);
     }
 
     public function getStatusLabelAttribute(): string
