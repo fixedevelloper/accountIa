@@ -36,26 +36,52 @@ class DocumentController
 
     public function index(Request $request)
     {
-        $query = DocumentExtraction::query();
+        $user = $request->user();
 
-        // 🔎 Filtres utiles
+        $query = DocumentExtraction::query()
+            // 🔥 MULTI-TENANT : Seulement les companies de l'utilisateur
+            ->join('documents', 'document_extractions.document_id', '=', 'documents.id')
+            ->join('companies', 'documents.company_id', '=', 'companies.id')
+            ->join('company_users', 'companies.id', '=', 'company_users.company_id')
+            ->where('company_users.user_id', $user->id);
+
+        // 🔎 Filtres avancés
         if ($request->filled('document_id')) {
-            $query->where('document_id', $request->document_id);
+            $query->where('document_extractions.document_id', $request->document_id);
         }
 
         if ($request->filled('supplier_name')) {
-            $query->where('supplier_name', 'like', '%' . $request->supplier_name . '%');
+            $query->where('document_extractions.supplier_name', 'like', '%' . $request->supplier_name . '%');
+        }
+
+        if ($request->filled('category')) {
+            $query->where('document_extractions.category', $request->category);
+        }
+
+        if ($request->filled('payment_status')) {
+            $query->where('document_extractions.payment_status', $request->payment_status);
         }
 
         if ($request->filled('date_from')) {
-            $query->whereDate('invoice_date', '>=', $request->date_from);
+            $query->whereDate('document_extractions.invoice_date', '>=', $request->date_from);
         }
 
         if ($request->filled('date_to')) {
-            $query->whereDate('invoice_date', '<=', $request->date_to);
+            $query->whereDate('document_extractions.invoice_date', '<=', $request->date_to);
         }
 
-        $extractions = $query->latest()->paginate(10);
+        if ($request->filled('status')) {
+            $query->where('document_extractions.status', $request->status);
+        }
+
+        if ($request->filled('company_id')) {
+            $query->where('documents.company_id', $request->company_id);
+        }
+
+        $extractions = $query
+            ->select('document_extractions.*', 'documents.company_id') // Évite doublons
+            ->latest('document_extractions.created_at')
+            ->paginate(10);
 
         return DocumentExtractionResource::collection($extractions);
     }
